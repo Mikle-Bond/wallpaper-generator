@@ -12,55 +12,61 @@ __licence__ = "MIT"
 __email__ = "timozattol@gmail.com"
 __status__ = "Prototype"
 
-from os import path, makedirs
+import click
+from pathlib import Path
+
 from math import ceil
-import subprocess, sys
 from PIL import Image, ImageDraw
 from random import sample
 from polylattice import PolyLattice
 from colors import palettes
 
+def check_resolution(ctx, param, resolution):
+    try:
+        res_parse = resolution.split("x")
+        if len(res_parse) != 2:
+            raise ValueError()
 
-def main():
+        res_parse = [int(x) for x in res_parse]
+        if any(x < 0 for x in res_parse):
+            raise ValueError()
 
-    ## Configurations ##
-    palette = 'pastel_forest'
-    mutation_intensity = 30
-    default_resolution = [1920, 1080]
+        return res_parse
+
+    except ValueError:
+        raise click.BadParameter('Resolution given in arguments must be written like "1920x1080".')
+
+@click.command()
+@click.option('--resolution', '-r', callback=check_resolution, default='1366x768',
+        help='screen resolution, written as 1920x1080')
+@click.option('--palette', '-p', default='xresources', type=click.Choice(list(palettes.keys())),
+        help='one of palettes')
+@click.option('--output', '-o', default='wallpaper.png',
+        type=click.Path(file_okay=True, dir_okay=False, writable=True, readable=False),
+        help='output file')
+@click.option('--force', '-f', is_flag=True, default=False,
+        help='overwrite output file if it exists')
+@click.option('--mutation', '-m', 'mutation_intensity', type=click.INT, default=30,
+        help='mutation intensity')
+def main(resolution, palette, output, force, mutation_intensity):
 
     # Polygons have a fixed size in px. Higher resolution = more polygons
     poly_sizes = (120, 100)
 
-    ## Paths ##
-    file_path = path.realpath(__file__)
-    file_dir = file_path.rstrip("/main.py")
+    ## Output file ##
+    render_file = Path(output)
 
-    # Create renders/ folder if necessary
-    render_folder = file_dir + "/renders"
-    makedirs(render_folder, exist_ok=True)
+    # Script shouldn't be supposed to meke dirs
+    if not render_file.parent.exists():
+        raise click.BadParameter('Path to the output file does not exist')
 
-    render_file = render_folder + "/wallpaper.jpg"
-
-    # Get resolution from program arguments, or use default resolution
-    resolution = default_resolution
-
-    if len(sys.argv) >= 2:
-        try:
-            # Try parsing resolution from argv[1]
-            res_parse = sys.argv[1].split("x")
-
-            if len(res_parse) != 2:
-                raise ValueError()
-
-            res_parse = [int(x) for x in res_parse]
-
-            if any(x < 0 for x in res_parse):
-                raise ValueError()
-
-            resolution = res_parse
-
-        except ValueError:
-            sys.stderr.write('Resolution given in arguments must be written like "1920x1080". Using default resolution...')
+    # Delete eventual previous renders
+    if render_file.is_file():
+        if not force:
+            click.confirm('File "{}" exists. Overwrite?'.format(render_file), abort=True)
+        else:
+            click.echo('Warning, file "{}" will be overwriten.'.format(render_file), err=True)
+        render_file.unlink()
 
     # Create an image of the size of the screen
     im = Image.new("RGB", resolution, 0)
@@ -87,14 +93,9 @@ def main():
     # Draw the polylattice on the image
     polylattice.draw(image_draw)
 
-    # Delete eventual previous renders
-    subprocess.call(["rm", render_file], stderr=subprocess.DEVNULL)
-
     # Save image in renders
     im.save(render_file)
 
-    # Update wallpaper
-    subprocess.call(["gsettings", "set", "org.gnome.desktop.background", "picture-uri", "".join(["file://", render_file])])
-
 if __name__ == '__main__':
     main()
+
