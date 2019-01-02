@@ -21,6 +21,8 @@ from random import sample
 from polylattice import PolyLattice
 from colors import palettes
 
+from palettes import palette_providers
+
 def check_resolution(ctx, param, resolution):
     try:
         res_parse = resolution.split("x")
@@ -36,10 +38,15 @@ def check_resolution(ctx, param, resolution):
     except ValueError:
         raise click.BadParameter('Resolution given in arguments must be written like "1920x1080".')
 
+def select_palette(ctx, param, value):
+    p = palette_providers[value]()
+    return p.get_color_pair()
+
 @click.command()
 @click.option('--resolution', '-r', callback=check_resolution, default='1366x768',
         help='screen resolution, written as 1920x1080')
-@click.option('--palette', '-p', default='xresources', type=click.Choice(list(palettes.keys())),
+@click.option('--palette', '-p', 'colors', default='pastel', callback=select_palette,
+        type=click.Choice(list(palette_providers.keys())),
         help='one of palettes')
 @click.option('--output', '-o', default='wallpaper.png',
         type=click.Path(file_okay=True, dir_okay=False, writable=True, readable=False),
@@ -48,7 +55,7 @@ def check_resolution(ctx, param, resolution):
         help='overwrite output file if it exists')
 @click.option('--mutation', '-m', 'mutation_intensity', type=click.INT, default=30,
         help='mutation intensity')
-def main(resolution, palette, output, force, mutation_intensity):
+def main(resolution, colors, output, force, mutation_intensity):
 
     # Polygons have a fixed size in px. Higher resolution = more polygons
     poly_sizes = (120, 100)
@@ -83,12 +90,9 @@ def main(resolution, palette, output, force, mutation_intensity):
         poly_sizes)
     polylattice.initialise(separate_in_triangles=True)
 
-    # Choose two colors from the palette
-    colors = sample(palettes[palette], 2)
-
     # Mutate PolyLattice and apply random gradient of colors
     polylattice.mutate(mutation_intensity)
-    polylattice.gradient_colors_random_direction(colors[0], colors[1])
+    polylattice.gradient_colors_random_direction(*colors)
 
     # Draw the polylattice on the image
     polylattice.draw(image_draw)
